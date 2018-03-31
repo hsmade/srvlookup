@@ -23,7 +23,7 @@ class SRVQueryFailure(Exception):
         return 'SRV query failure: %s' % self.args[0]
 
 
-def lookup(name, protocol='TCP', domain=None):
+def lookup(name, protocol='TCP', domain=None, nameserver=None):
     """Return a list of service records and associated data for the given
     service name, protocol and optional domain. If protocol is not specified,
     TCP will be used. If domain is not specified, the domain name returned by
@@ -43,11 +43,12 @@ def lookup(name, protocol='TCP', domain=None):
     :param str name: The service name
     :param str protocol: The protocol name, defaults to TCP
     :param str domain: The domain name to use, defaults to local domain name
+    :param str nameserver: The nameserver:port to connect to, if not using /etc/resolv.conf
     :rtype: list of srvlookup.SRV
 
     """
     answer = _query_srv_records('_%s._%s.%s' % (name, protocol,
-                                                domain or _get_domain()))
+                                                domain or _get_domain()), nameserver=nameserver)
     results = _build_result_set(answer)
     return sorted(results, key=lambda r: (r.priority, -r.weight, r.host))
 
@@ -61,17 +62,23 @@ def _get_domain():
     return '.'.join(socket.getfqdn().split('.')[1:])
 
 
-def _query_srv_records(fqdn):
+def _query_srv_records(fqdn, nameserver=None):
     """Query DNS for the SRV records of the fully-qualified domain name
     specified.
 
     :param str fqdn: The fully-qualified domain name to query
+    :param str nameserver: The nameserver:port to connect to, if not using /etc/resolv.conf
     :rtype: dns.resolver.Answer
     :raises: SRVQueryFailure
 
     """
+    res = resolver.Resolver()
+    if nameserver:
+        ns_ip, ns_port = nameserver.split(':')
+        res.nameservers = [ns_ip]
+        res.port = int(ns_port)
     try:
-        return resolver.query(fqdn, 'SRV')
+        return res.query(fqdn, 'SRV')
     except (resolver.NoAnswer,
             resolver.NoNameservers,
             resolver.NotAbsolute,
